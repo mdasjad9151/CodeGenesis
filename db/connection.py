@@ -1,25 +1,18 @@
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine,text
 from sqlalchemy.orm import sessionmaker
-from dotenv import load_dotenv
-import os
-
-load_dotenv()
-
-POSTGRESQL_URI = os.getenv("POSTGRESQL_URI")
-
+from core.configs import ConfigLoader
 
 class Database:
 
     _engine = None
     _SessionLocal = None
+    postger_uri =  ConfigLoader().get_db_config()['postgre_uri']
 
     @classmethod
     def initialize(cls, db_name: str):
 
         if cls._engine is None:
-
-            DATABASE_URL = f"{POSTGRESQL_URI}/{db_name}"
-
+            DATABASE_URL = f"{cls.postger_uri}{db_name}"
             cls._engine = create_engine(
                 DATABASE_URL,
                 pool_pre_ping=True,
@@ -27,6 +20,9 @@ class Database:
                 max_overflow=20,
                 echo=False,
             )
+            # Force connection
+            with cls._engine.connect() as conn:
+                conn.execute(text("SELECT 1"))
 
             cls._SessionLocal = sessionmaker(
                 autocommit=False,
