@@ -1,10 +1,10 @@
 import os
 import time
 import random
+from datetime import datetime, timezone
 import jwt
 from passlib.context import CryptContext
 from repositories.auth_repository import AuthRepository
-from schema.auth import RegisterRequest
 
 
 pwd_context = CryptContext(
@@ -51,16 +51,32 @@ class AuthService:
         except Exception as e:
             return {"message": f"Error registering user: {str(e)}", "status_code": 500}
         
-    def verify_otp(self, email: str, otp: str):
+    async def verify_otp(self):
         try:
+            email = self.request.email
+            otp = self.request.otp
             user = self.auth_repository.get_user_by_email(email)
             if not user:
                 return {"message": "User not found", "status_code": 404}
-            if user.otp_code != otp:
+
+            if user["is_verified"]:
+                return {"message": "User already verified", "status_code": 400}
+
+            otp_record = self.auth_repository.get_active_registration_otp(str(user["id"]))
+            if not otp_record:
+                return {"message": "OTP not found", "status_code": 404}
+
+            if otp_record["otp_code"] != otp:
                 return {"message": "Invalid OTP", "status_code": 400}
-            if user.otp_expires_at < time.time():
+
+            expires_at = otp_record["expires_at"]
+            if expires_at.tzinfo is None:
+                expires_at = expires_at.replace(tzinfo=timezone.utc)
+
+            if expires_at < datetime.now(timezone.utc):
                 return {"message": "OTP expired", "status_code": 400}
-            self.auth_repository.mark_user_as_verified(user.id)
+
+            self.auth_repository.mark_user_as_verified(str(user["id"]), str(otp_record["id"]))
             return {"message": "User verified successfully", "status_code": 200}
         except Exception as e:
             return {"message": f"Error verifying OTP: {str(e)}", "status_code": 500}
