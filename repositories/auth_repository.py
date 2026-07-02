@@ -46,6 +46,18 @@ class AuthRepository:
         finally:
             self.db.close()
 
+    def get_login_user_by_email(self, email: str):
+        try:
+            query = f"""
+                SELECT id, email, hashed_password, is_verified, is_active
+                FROM {self.table_name}
+                WHERE email = :email
+            """
+            result = self.db.execute(text(query), {"email": email})
+            return result.mappings().first()
+        finally:
+            self.db.close()
+
     def get_active_registration_otp(self, user_id: str):
         try:
             query = """

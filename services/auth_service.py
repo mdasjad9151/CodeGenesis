@@ -80,3 +80,33 @@ class AuthService:
             return {"message": "User verified successfully", "status_code": 200}
         except Exception as e:
             return {"message": f"Error verifying OTP: {str(e)}", "status_code": 500}
+
+    async def login_user(self):
+        try:
+            email = self.request.email
+            password = self.request.password
+            user = self.auth_repository.get_login_user_by_email(email)
+
+            if not user:
+                return {"message": "Invalid email or password", "status_code": 401}
+
+            if not user["is_verified"]:
+                return {"message": "User is not verified", "status_code": 403}
+
+            if not user["is_active"]:
+                return {"message": "User account is inactive", "status_code": 403}
+
+            if not user["hashed_password"] or not self.verify_password(password, user["hashed_password"]):
+                return {"message": "Invalid email or password", "status_code": 401}
+
+            access_token = self.generate_jwt_token(user["email"])
+            return {
+                "message": "Login successful",
+                "status_code": 200,
+                "data": {
+                    "access_token": access_token,
+                    "token_type": "bearer",
+                    }
+            }
+        except Exception as e:
+            return {"message": f"Error logging in user: {str(e)}", "status_code": 500}

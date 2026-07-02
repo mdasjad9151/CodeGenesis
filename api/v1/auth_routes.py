@@ -16,3 +16,9 @@ async def register_user(request: RegisterRequest):
 async def verify_otp(request: VerifyOTPRequest):
     auth_service = AuthService(config, request)
     return await auth_service.verify_otp()
+
+
+@router.post("/api/v1/auth/login")
+async def login_user(request: LoginRequest):
+    auth_service = AuthService(config, request)
+    return await auth_service.login_user()
