@@ -20,14 +20,45 @@ class AuthService:
         self.auth_repository = AuthRepository()
         self.request = request
 
-    def generate_jwt_token(self, email: str) -> str:
-        payload = {
-            "sub": email,
-            "exp": time.time() + 3600  # 1 hour expiration
+    def build_token_payload(self, user: dict, token_type: str, expires_in_seconds: int) -> dict:
+        return {
+            "sub": user["email"],
+            "user_id": str(user["id"]),
+            "is_verified": bool(user["is_verified"]),
+            "is_active": bool(user["is_active"]),
+            "token_type": token_type,
+            "exp": time.time() + expires_in_seconds,
         }
+
+    def encode_jwt_token(self, payload: dict) -> str:
         jwt_config = self.config.jwt_config()
         return jwt.encode(payload, jwt_config['secret_key'], algorithm=jwt_config['algorithm'])
-    
+
+    def generate_access_token(self, user: dict) -> str:
+        payload = self.build_token_payload(
+            user=user,
+            token_type="access",
+            expires_in_seconds=3,
+        )
+        return self.encode_jwt_token(payload)
+
+    def generate_refresh_token(self, user: dict) -> str:
+        payload = self.build_token_payload(
+            user=user,
+            token_type="refresh",
+            expires_in_seconds=4 * 24 * 60 * 60,
+        )
+        return self.encode_jwt_token(payload)
+
+    def generate_tokens(self, user: dict) -> dict:
+        access_token = self.generate_access_token(user)
+        refresh_token = self.generate_refresh_token(user)
+        return {
+            "access_token": access_token,
+            "refresh_token": refresh_token,
+            "token_type": "bearer",
+        }
+
     def hash_password(self, password: str) -> str:
         return pwd_context.hash(password)
 
@@ -99,14 +130,49 @@ class AuthService:
             if not user["hashed_password"] or not self.verify_password(password, user["hashed_password"]):
                 return {"message": "Invalid email or password", "status_code": 401}
 
-            access_token = self.generate_jwt_token(user["email"])
+            tokens = self.generate_tokens(user)
             return {
                 "message": "Login successful",
+                "status_code": 200,
+                "data": tokens
+            }
+        except Exception as e:
+            return {"message": f"Error logging in user: {str(e)}", "status_code": 500}
+
+    async def refresh_access_token(self):
+        try:
+            jwt_config = self.config.jwt_config()
+            payload = jwt.decode(
+                self.request.refresh_token,
+                jwt_config["secret_key"],
+                algorithms=[jwt_config["algorithm"]],
+            )
+
+            if payload.get("token_type") != "refresh":
+                return {"message": "Invalid refresh token", "status_code": 401}
+
+            if payload.get("is_active") is not True or not payload.get("sub"):
+                return {"message": "Invalid refresh token", "status_code": 401}
+
+            user = {
+                "id": payload.get("user_id"),
+                "email": payload.get("sub"),
+                "is_verified": payload.get("is_verified", False),
+                "is_active": payload.get("is_active", False),
+            }
+            access_token = self.generate_access_token(user)
+            return {
+                "message": "Access token refreshed successfully",
                 "status_code": 200,
                 "data": {
                     "access_token": access_token,
                     "token_type": "bearer",
-                    }
+                }
             }
-        except Exception as e:
-            return {"message": f"Error logging in user: {str(e)}", "status_code": 500}
+        except jwt.ExpiredSignatureError:
+            return {"message": "Refresh token has expired", "status_code": 401}
+        except jwt.InvalidTokenError:
+            return {"message": "Invalid refresh token", "status_code": 401}
+
+    async def home(self):
+        return {"message": "Welcome to the Auth Service", "status_code": 200}
