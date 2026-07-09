@@ -1,9 +1,9 @@
-import os
-import time
 import random
-from datetime import datetime, timezone
-import jwt
+from datetime import datetime, timedelta, timezone
 from passlib.context import CryptContext
+from fastapi import HTTPException
+
+from core.security import create_token, decode_token, validate_token_type
 from repositories.auth_repository import AuthRepository
 
 
@@ -20,35 +20,21 @@ class AuthService:
         self.auth_repository = AuthRepository()
         self.request = request
 
-    def build_token_payload(self, user: dict, token_type: str, expires_in_seconds: int) -> dict:
-        return {
-            "sub": user["email"],
-            "user_id": str(user["id"]),
-            "is_verified": bool(user["is_verified"]),
-            "is_active": bool(user["is_active"]),
-            "token_type": token_type,
-            "exp": time.time() + expires_in_seconds,
-        }
-
-    def encode_jwt_token(self, payload: dict) -> str:
-        jwt_config = self.config.jwt_config()
-        return jwt.encode(payload, jwt_config['secret_key'], algorithm=jwt_config['algorithm'])
-
     def generate_access_token(self, user: dict) -> str:
-        payload = self.build_token_payload(
+        jwt_config = self.config.jwt_config()
+        return create_token(
             user=user,
             token_type="access",
-            expires_in_seconds=3,
+            expires_delta=timedelta(minutes=jwt_config["access_token_expire_minutes"]),
         )
-        return self.encode_jwt_token(payload)
 
     def generate_refresh_token(self, user: dict) -> str:
-        payload = self.build_token_payload(
+        jwt_config = self.config.jwt_config()
+        return create_token(
             user=user,
             token_type="refresh",
-            expires_in_seconds=4 * 24 * 60 * 60,
+            expires_delta=timedelta(days=jwt_config["refresh_token_expire_days"]),
         )
-        return self.encode_jwt_token(payload)
 
     def generate_tokens(self, user: dict) -> dict:
         access_token = self.generate_access_token(user)
@@ -141,38 +127,28 @@ class AuthService:
 
     async def refresh_access_token(self):
         try:
-            jwt_config = self.config.jwt_config()
-            payload = jwt.decode(
-                self.request.refresh_token,
-                jwt_config["secret_key"],
-                algorithms=[jwt_config["algorithm"]],
-            )
+            payload = decode_token(self.request.refresh_token)
+            validate_token_type(payload, "refresh")
 
-            if payload.get("token_type") != "refresh":
+            user_id = payload.get("user_id")
+            if not user_id:
                 return {"message": "Invalid refresh token", "status_code": 401}
 
-            if payload.get("is_active") is not True or not payload.get("sub"):
+            user = self.auth_repository.get_user_by_id(user_id)
+            if not user or user["email"] != payload.get("sub"):
                 return {"message": "Invalid refresh token", "status_code": 401}
 
-            user = {
-                "id": payload.get("user_id"),
-                "email": payload.get("sub"),
-                "is_verified": payload.get("is_verified", False),
-                "is_active": payload.get("is_active", False),
-            }
-            access_token = self.generate_access_token(user)
+            if not user["is_active"]:
+                return {"message": "User account is inactive", "status_code": 403}
+
+            tokens = self.generate_tokens(user)
             return {
-                "message": "Access token refreshed successfully",
+                "message": "Tokens refreshed successfully",
                 "status_code": 200,
-                "data": {
-                    "access_token": access_token,
-                    "token_type": "bearer",
-                }
+                "data": tokens,
             }
-        except jwt.ExpiredSignatureError:
-            return {"message": "Refresh token has expired", "status_code": 401}
-        except jwt.InvalidTokenError:
-            return {"message": "Invalid refresh token", "status_code": 401}
+        except HTTPException as exc:
+            return {"message": exc.detail, "status_code": exc.status_code}
 
     async def home(self):
         return {"message": "Welcome to the Auth Service", "status_code": 200}

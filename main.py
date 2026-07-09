@@ -4,7 +4,7 @@ from db.engine import start_database
 from core.logging import Logger
 app = FastAPI()
 
-app.include_router(router.router)
+# app.include_router(router.router)
 app.include_router(auth_routes.router)
 
 start_database()
