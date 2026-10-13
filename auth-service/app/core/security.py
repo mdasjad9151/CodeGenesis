@@ -22,18 +22,25 @@ def _jwt_settings() -> dict[str, Any]:
     return jwt_config
 
 
-def create_token(*, user: dict[str, Any], token_type: str, expires_delta: timedelta) -> str:
+def create_token(
+    *,
+    user: dict[str, Any],
+    token_type: str,
+    expires_delta: timedelta,
+    jti: str | None = None,
+) -> str:
     now = datetime.now(timezone.utc)
     payload = {
         "sub": user["email"],
         "user_id": str(user["id"]),
+        "role": user.get("role", "user"),
         "is_verified": bool(user["is_verified"]),
         "is_active": bool(user["is_active"]),
         "token_type": token_type,
         "iat": int(now.timestamp()),
         "nbf": int(now.timestamp()),
         "exp": int((now + expires_delta).timestamp()),
-        "jti": str(uuid4()),
+        "jti": jti or str(uuid4()),
     }
     jwt_config = _jwt_settings()
     return jwt.encode(payload, jwt_config["secret_key"], algorithm=jwt_config["algorithm"])

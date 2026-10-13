@@ -1,9 +1,9 @@
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, Field
 
 
 class RegisterRequest(BaseModel):
     email: EmailStr
-    password: str
+    password: str = Field(..., min_length=8, max_length=128)
 
 class VerifyOTPRequest(BaseModel):
     email: EmailStr
@@ -23,3 +23,15 @@ class LoginRequest(BaseModel):
 
 class RefreshTokenRequest(BaseModel):
     refresh_token: str
+
+
+class MessageResponse(BaseModel):
+    message: str
+
+
+class UserResponse(BaseModel):
+    id: str
+    email: EmailStr
+    role: str
+    is_verified: bool
+    is_active: bool

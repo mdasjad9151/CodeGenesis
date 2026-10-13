@@ -29,6 +29,12 @@ class Database:
         )
 
     @classmethod
+    def get_engine(cls):
+        if cls._engine is None:
+            raise RuntimeError("Database not initialized.")
+        return cls._engine
+
+    @classmethod
     def get_session(cls):
         if cls._SessionLocal is None:
             raise RuntimeError("Database not initialized.")
